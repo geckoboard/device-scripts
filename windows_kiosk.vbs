@@ -11,7 +11,7 @@ Option Explicit
 
 On Error Resume Next
 
-Dim errMsgEnd, completedMsg, bolSetAutoLogin, objShell, objFSO, wshShell
+Dim errMsgEnd, completedMsg, userLoginMsg, bolSetAutoLogin, objShell, objFSO, wshShell
 
 Set objShell = CreateObject("Shell.Application")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
@@ -20,7 +20,13 @@ Set wshShell = WScript.CreateObject("WScript.Shell")
 errMsgEnd = "The program has stopped due to the below error " &_
  "If you believe this is a bug, please report it." & vbCrLf & vbCrLf &_
  "If you are having issues please ask for help from Geckoboard support " & vbCrLf & vbCrLf
- 
+
+userLoginMsg = "You will be presented with new window to input password for current user" & vbCrLf & vbCrLf &_
+	"There are just three steps:" & vbCrLf &_
+	" 1. Uncheck " & Chr(34) & "Users must enter a username & password..." & Chr(34) & vbCrLf &_
+	" 2. Click OK - now you will be presented with a dialog to input the username and password" & vbCrLf &_
+	" 3. Input the password of the current user"
+
 completedMsg = vbCrLf & vbCrLf & "************ Setup complete ***********" & vbCrLf &_
 	"Check out the send to TV support article on how to pair your device with Geckoboard" & vbCrLf &_
 	"Now you are ready to reboot" & vbCrLf & vbCrLf &_
@@ -45,8 +51,14 @@ bolSetAutoLogin = WScript.StdIn.ReadLine
 
 ' Set current user to autologin
 If bolSetAutoLogin = "y" Then
-	LogMsg "setting up user to auto login", Null
-	SetupAutoLoginUser
+	LogMsg "preparing user to auto login", Null
+
+	WScript.Echo(vbCrLf & userLoginMsg & vbCrLf)
+	WScript.StdOut.Write("Press any key when ready:")
+	WScript.StdIn.ReadLine
+	
+	LogMsg "waiting for user to complete auto user login flow", Null
+	wshShell.Run "netplwiz",0,True
 End If
 
 ' Install Chrome browser
@@ -121,27 +133,6 @@ Sub PrintProcessSteps
 	WScript.Echo(msg2)
 	WScript.Echo("If you are ready press any key to start")
 	WScript.StdIn.ReadLine
-End Sub
-
-Sub SetupAutoLoginUser
-	On Error Resume Next
-
-	Dim strUser, strPasswd
-	
-	strUser = CreateObject("WScript.Network").UserName
-	CheckForErr
-
-	WScript.StdOut.Write("Input the password for "+ strUser + ": ")
-	strPasswd = WScript.StdIn.ReadLine
-
-	wshShell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\AutoAdminLogon",1,"REG_SZ"
-	CheckForErr
-	
-	wshShell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultUserName",strUser,"REG_SZ"
-	CheckForErr
-	
-	wshShell.RegWrite "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword",strPasswd,"REG_SZ"
-	CheckForErr
 End Sub
 
 ' Apparently looking through docs and google search
