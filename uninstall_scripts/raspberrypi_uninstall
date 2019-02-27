@@ -1,0 +1,107 @@
+#!/bin/bash
+
+log() {
+  if [[ $2 != "" ]]; then
+    printf "\n[ERRO] $1\n"
+    cat <<EOF
+
+The program has stopped due to the above error
+If you believe this is a bug, please report it.
+If you are having issues please ask for help from Geckoboard support
+
+Press any key to exit
+EOF
+
+    # Give the user time to see this message
+    read
+    exit 127
+  else
+    printf "\n[INFO] $1\n"
+  fi
+}
+
+remove_color_emoji() {
+  FONT_STORE=$HOME/.local/share/fonts
+  NOTOEMOJI_DIR=noto_color_emoji
+
+  rm $FONT_STORE/NotoColorEmoji* || true
+}
+
+remove_mscore_fonts() {
+  sudo apt remove -y ttf-mscorefonts-installer
+}
+
+check_raspberrypi() {
+  if ! `lsb_release -a | grep -q "Raspbian"`; then
+    log "this device appears not to be running raspbian os" 1
+  fi
+
+  if ! `uname -m | grep -q "armv"` ; then
+    log "this device doesn't appear to be a raspberry pi" 1
+  fi
+
+  if [[ $DESKTOP_SESSION != "LXDE-pi" ]]; then
+    log "this device isn't running a supported desktop environment", 1
+  fi
+}
+
+remove_kiosk_scripts() {
+  AUTOSTART_PATH=$HOME/.config/lxsession/LXDE-pi
+  AUTOSTART_FILE=$AUTOSTART_PATH/autostart
+  GECKOBOARD_KIOSK_FILE=$AUTOSTART_PATH/geckoboard_kiosk_mode
+
+  log "removing kiosk mode scripts"
+  rm $GECKOBOARD_KIOSK_FILE || true
+
+  if grep -Fxq "@$GECKOBOARD_KIOSK_FILE" $AUTOSTART_FILE; then
+    echo "[INFO] removing autostart kiosk line"
+    sed -i '/geckoboard_kiosk_mode/d' $AUTOSTART_FILE
+  else
+    echo "[INFO] kiosk mode autostart line not found"
+  fi
+}
+
+# Display logo and intro to user
+# ASCII display generated at https://www.ascii-art-generator.org/
+
+cat <<EOF
+   _____ ______ _____ _  ______  ____   ____          _____  _____ 
+  / ____|  ____/ ____| |/ / __ \|  _ \ / __ \   /\   |  __ \|  __ \ 
+ | |  __| |__   |    | ' / |  | | |_| | |  | | /  \  | |__| | |  | | 
+ | | |_ |  __|  |    |  <  |  | |  _ <| |  | |/ /\ \ |  _  /| |  | | 
+ | |__| | |___  |____| ' \ |__| | |_| | |__| / ____ \| | \ \| |__| | 
+  \_____|______\_____|_|\_\____/|____/ \____/_/    \_\_|  \_\_____/ 
+
+This will remove all things installed to support Geckoboard kiosk mode
+
+We will do the following;
+ - Remove color emoji support
+ - Remove Microsoft core fonts
+ - Remove kiosk script
+
+ This process should only take a few seconds
+ If you are ready press any key to start
+EOF
+
+read
+
+check_raspberrypi
+
+log "removing mscore fonts"
+remove_mscore_fonts 2&> /dev/null
+
+log "removing color emoji font"
+remove_color_emoji 2&> /dev/null
+
+log "removing Geckoboard kiosk script"
+remove_kiosk_scripts 2&> /dev/null
+
+cat <<EOF
+
+Removal of resources completed
+
+When you are ready press any key to reboot.
+EOF
+
+read
+sudo reboot
