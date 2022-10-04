@@ -49,11 +49,11 @@ install_mscore_fonts() {
 }
 
 check_raspberrypi() {
-  if ! `lsb_release -a | grep -q "Raspbian"`; then
+  if ! `lsb_release -a | grep -Eq "Raspbian|Debian"`; then
     log "this device appears not to be running raspbian os" 1
   fi
 
-  if ! `uname -m | grep -q "armv"` ; then
+  if ! `uname -m | grep -Eq "armv|aarch64"` ; then
     log "this device doesn't appear to be a raspberry pi" 1
   fi
 
