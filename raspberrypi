@@ -57,8 +57,45 @@ check_raspberrypi() {
     log "this device doesn't appear to be a raspberry pi" 1
   fi
 
-  if [[ $DESKTOP_SESSION != "LXDE-pi" ]]; then
+  if [[ `echo $DESKTOP_SESSION | grep -Eq "LXDE-pi|LXDE-pi-wayfire"` ]]; then
     log "this device isn't running a support desktop environment", 1
+  fi
+}
+
+install_kiosk_script_for_wayland() {
+  GECKOBOARD_KIOSK_FILE=$HOME/.local/geckoboard_kiosk_mode
+  WAYFIRE_INI=$HOME/.config/wayfire.ini
+
+cat > $GECKOBOARD_KIOSK_FILE <<EOF
+#!/bin/bash
+
+# No energy saving stuff on wayfire unless enabled it seems
+# Disable any installed extentions and the default browser check and error dialogs
+chromium-browser \
+--noerrdialogs \
+--no-first-run \
+--no-default-browser-check \
+--ozone-platform=wayland \
+--disable-extensions \
+--start-fullscreen \
+https://app.geckoboard.com/tv
+EOF
+
+WAYFIRE_AUTOSTART_BLOCK=$(
+cat <<EOF
+
+
+[autostart]
+geckoboard_kiosk = $GECKOBOARD_KIOSK_FILE
+EOF
+)
+
+  chmod +x $GECKOBOARD_KIOSK_FILE
+
+  if grep -Fxq "$GECKOBOARD_KIOSK_FILE" $WAYFIRE_INI; then
+    echo "[SKIP] kiosk mode already setup"
+  else
+    echo "$WAYFIRE_AUTOSTART_BLOCK" >> $WAYFIRE_INI
   fi
 }
 
@@ -183,7 +220,14 @@ log "installing color emoji support"
 install_color_emoji > /dev/null
 
 log "setting up Geckoboard kiosk mode"
-install_kiosk_script
+
+# Wayfire compositor handles autostart so check the session
+# and use the wayland installation as we can't support any X11 stuff
+if [[ $DESKTOP_SESSION = "LXDE-pi-wayfire" ]]; then
+  install_kiosk_script_for_wayland
+else
+  install_kiosk_script
+fi
 
 cat <<EOF
 
