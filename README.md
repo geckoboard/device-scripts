@@ -5,11 +5,11 @@ Handful of scripts for customers to run to setup devices quickly
 ## Raspberry PI
 
 The raspberry PI bash script helps get the raspbian Pi into a kiosk like mode, easing the setup that would normally be required by hand. By default it will 
- - install the latest chromium browser from apt which I think is locked to version 60
+ - install the latest chromium browser from apt that is available
  - install some mscore fonts
  - install google color emoji font for nicer emoji display
  - whether the user wants to do a full `apt upgrade`
- - whether to turn on overscaning
+ - whether to turn on overscaning (only applicable to non-wayland instances)
  - setup a login script to be called upon the GUI starting
    - which starts google chrome at Geckoboard fullscreen
  
