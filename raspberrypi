@@ -1,5 +1,8 @@
 #!/bin/bash
 
+REPO="https://raw.githubusercontent.com/geckoboard/device-scripts"
+WAYFIRE_SESSION_NAME="LXDE-pi-wayfire"
+
 log() {
   if [[ $2 != "" ]]; then
     printf "\n[ERRO] $1\n"
@@ -25,10 +28,6 @@ upgrade_system() {
   sudo apt -qq autoremove -y > /dev/null
 }
 
-install_essential_tools() {
-  sudo apt install -y chromium-browser unclutter
-}
-
 install_color_emoji() {
   NOTOEMOJI_ZIPFILE=noto_color_emoji.zip
   FONT_STORE=$HOME/.local/share/fonts
@@ -44,8 +43,22 @@ install_color_emoji() {
   rm $NOTOEMOJI_ZIPFILE || true
 }
 
-install_mscore_fonts() {
-  sudo apt install -y ttf-mscorefonts-installer
+install_hide_cursor() {
+  if [[ $DESKTOP_SESSION = $WAYFIRE_SESSION_NAME ]]; then
+    # For wayland we've already compile hide-cursor for arm arch64
+    # So we just need copy over into the specific places
+    # For now we assume all will use 64bit version as bookworm
+    # officially supported in pi 4+ so thats all I've compiled for
+    curl -sO "$REPO/wayfire/hide-cursor.xml"
+    curl -sO "$REPO/wayfire/libhide-cursor.so"
+
+    # Copy the xml and compiled plugin to the required paths
+    sudo cp hide-cursor.xml /usr/share/wayfire/metadata/
+    sudo cp libhide-cursor.so /usr/lib/aarch64-linux-gnu/wayfire/
+  else
+    # Unclutter is only applicable to non-wayland setups
+    sudo apt install -y unclutter
+  fi
 }
 
 check_raspberrypi() {
@@ -57,8 +70,73 @@ check_raspberrypi() {
     log "this device doesn't appear to be a raspberry pi" 1
   fi
 
-  if [[ $DESKTOP_SESSION != "LXDE-pi" ]]; then
-    log "this device isn't running a support desktop environment", 1
+  if [[ `echo $DESKTOP_SESSION | grep -Eq "LXDE-pi|LXDE-pi-wayfire"` ]]; then
+    log "this device isn't running a supported desktop environment", 1
+  fi
+}
+
+install_kiosk_script_for_wayland() {
+  GECKOBOARD_KIOSK_FILE=$HOME/.local/geckoboard_kiosk_mode
+  WAYFIRE_INI=$HOME/.config/wayfire.ini
+
+cat > $GECKOBOARD_KIOSK_FILE <<EOF
+#!/bin/bash
+
+# Ensure that if we have a power cut or bad shutdown that
+# the chromium preferences are reset to a "good" state so we
+# don't get the restore previous session dialog
+sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' $HOME/.config/chromium/Default/Preferences
+sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' $HOME/.config/chromium/Default/Preferences
+
+# Disable any installed extentions and the default browser check and error dialogs
+# We need to add the switch start-maximized otherwise on wayland it will 
+# start as a pixel size and not displayed using start-maximized fixes that
+chromium-browser \
+--disable-extensions \
+--start-maximized \
+--start-fullscreen \
+--no-default-browser-check \
+https://app.geckoboard.com/tv
+
+EOF
+
+
+# This is the default set of plugings for both with and without gl
+# So default the shared plugins and add the extra that gl supports
+DEFAULT_PLUGINS="alpha animate autostart autostart-static command pixdecor expo fast-switcher grid idle move oswitch place resize switcher vswitch window-rules wm-actions wrot hide-cursor"
+
+# We need to add add in the hide-cursor plugin along with the existing plugins already
+# defined in /etc/wayfire/default.ini so that the user gets access to the desktop too 
+WAYFIRE_BLOCK=$(
+cat <<EOF
+
+[autostart]
+geckoboard_kiosk = $GECKOBOARD_KIOSK_FILE
+
+[core]
+plugins = $DEFAULT_PLUGINS cube fisheye invert zoom winshadows
+plugins_nogl = $DEFAULT_PLUGINS
+xwayland = true
+only_decorate_gtk = true
+
+[autostart-static]
+autostart0 = wfrespawn wf-panel-pi
+autostart1 = wfrespawn pcmanfm --desktop --profile LXDE-pi
+autostart2 = lxsession-xdg-autostart
+
+[idle]
+screensaver_timeout = -1
+dpms_timeout = -1
+
+EOF
+)
+
+  chmod +x $GECKOBOARD_KIOSK_FILE
+
+  if grep -Fxq "$GECKOBOARD_KIOSK_FILE" $WAYFIRE_INI; then
+    echo "[SKIP] kiosk mode already setup"
+  else
+    echo "$WAYFIRE_BLOCK" >> $WAYFIRE_INI
   fi
 }
 
@@ -159,11 +237,14 @@ check_raspberrypi
 log "getting latest packages"
 sudo apt update -y
 
-printf "do you see black border around the screen [y/N]:"
-read blkbrd
-if [[ $blkbrd == "y" ]]; then
-  log "disabling underscan"
-  disable_underscan
+# Only ask about underscan for non-wayland instances
+if [[ $DESKTOP_SESSION != $WAYFIRE_SESSION_NAME ]]; then
+  printf "do you see black border around the screen [y/N]:"
+  read blkbrd
+  if [[ $blkbrd == "y" ]]; then
+    log "disabling underscan"
+    disable_underscan
+  fi
 fi
 
 printf "do you want to install latest updates (it might take 10+ mins) [y/N]:"
@@ -174,16 +255,24 @@ if [[ $upgr == "y" ]]; then
 fi
 
 log "installing latest chromium browser and tools"
-install_essential_tools > /dev/null
+sudo apt install -y chromium-browser > /dev/null
+install_hide_cursor > /dev/null
 
 log "installing mscore fonts"
-install_mscore_fonts > /dev/null
+sudo apt install -y ttf-mscorefonts-installer > /dev/null
 
 log "installing color emoji support"
 install_color_emoji > /dev/null
 
 log "setting up Geckoboard kiosk mode"
-install_kiosk_script
+
+# Wayfire compositor handles autostart so check the session
+# and use the wayland installation as we can't support any X11 stuff
+if [[ $DESKTOP_SESSION = $WAYFIRE_SESSION_NAME ]]; then
+  install_kiosk_script_for_wayland
+else
+  install_kiosk_script
+fi
 
 cat <<EOF
 
