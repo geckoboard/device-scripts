@@ -199,6 +199,36 @@ disable_underscan() {
   sudo sed -i 's/#disable_overscan=1/disable_overscan=1/' /boot/config.txt
 }
 
+# Ensure for bookworm that when turning off the connected display instead of it
+# disconnecting and causing Chrome to come out of fullscreen due to re-assessing
+# the display, we now we enforce a permanent display when HDMI is "disconnected"
+# We need to check which HDMI port is connected and inject to the boot cmdlines
+#   1) Is HDMI port nearest to power
+#   2) next one
+#   3) we don't use here, but means both are connected
+# This means that if we setup on 1 and connect to port 2 we will get a seperate
+# display instead of the "main" one. Re-running this script will always update.
+force_hdmi_display() {
+  ACTIVE_HDMI_PORT=`wlr-randr | grep HDMI | grep -v null`
+  BOOT_CMD_FILE=/boot/firmware/cmdline.txt
+  sudo cp "$BOOT_CMD_FILE" "$BOOT_CMD_FILE".bkp
+
+  HDMI_PORT=1
+  HOTPLUG_CMD=vc4.force_hotplug
+
+  if [[ "$ACTIVE_HDMI_PORT" =~ "HDMI-A-2" ]]; then
+    HDMI_PORT=2
+  fi
+
+  if grep -q "$HOTPLUG_CMD" $BOOT_CMD_FILE; then
+    echo "Amending existing HDMI hot plug setting"
+    sed "s/$HOTPLUG_CMD=[1-3]/$HOTPLUG_CMD=$HDMI_PORT/" $BOOT_CMD_FILE | xargs echo -n | sudo tee $BOOT_CMD_FILE
+  else
+    echo "Setting up HDMI hotplug"
+    echo -n " $HOTPLUG_CMD=$HDMI_PORT" | sudo tee -a $BOOT_CMD_FILE
+  fi
+}
+
 
 # Display logo and intro to user
 # ASCII display generated at https://www.ascii-art-generator.org/
@@ -270,7 +300,14 @@ log "setting up Geckoboard kiosk mode"
 # Wayfire compositor handles autostart so check the session
 # and use the wayland installation as we can't support any X11 stuff
 if [[ $DESKTOP_SESSION = $WAYFIRE_SESSION_NAME ]]; then
+  force_hdmi_display
   install_kiosk_script_for_wayland
+
+  # The wayfire service monitors config changes which causes
+  # the user to be logged out so they don't see the setup complete message
+  # So lets just trigger a reboot immediately otherwise the force hdmi will
+  # not have applied
+  reboot
 else
   install_kiosk_script
 fi
