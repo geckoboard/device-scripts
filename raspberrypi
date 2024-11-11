@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BRANCH="master"
+COMMIT="cf1de7ce0d00130dbd8a517a6f75fdc290e5170c"
 REPO="https://raw.githubusercontent.com/geckoboard/device-scripts"
 WAYFIRE_SESSION_NAME="LXDE-pi-wayfire"
 
@@ -50,8 +50,8 @@ install_hide_cursor() {
     # So we just need copy over into the specific places
     # For now we assume all will use 64bit version as bookworm
     # officially supported in pi 4+ so thats all I've compiled for
-    curl -sO "$REPO/$BRANCH/wayfire/hide-cursor.xml"
-    curl -sO "$REPO/$BRANCH/wayfire/libhide-cursor.so"
+    curl -sO "$REPO/$COMMIT/wayfire/hide-cursor.xml"
+    curl -sO "$REPO/$COMMIT/wayfire/libhide-cursor.so"
 
     # Copy the xml and compiled plugin to the required paths
     sudo cp hide-cursor.xml /usr/share/wayfire/metadata/
