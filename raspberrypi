@@ -1,8 +1,6 @@
 #!/bin/bash
 
-COMMIT="cf1de7ce0d00130dbd8a517a6f75fdc290e5170c"
-REPO="https://raw.githubusercontent.com/geckoboard/device-scripts"
-WAYFIRE_SESSION_NAME="LXDE-pi-wayfire"
+WAYLAND_SESSION_NAME="LXDE-pi-labwc"
 
 log() {
   if [[ $2 != "" ]]; then
@@ -45,17 +43,10 @@ install_color_emoji() {
 }
 
 install_hide_cursor() {
-  if [[ $DESKTOP_SESSION = $WAYFIRE_SESSION_NAME ]]; then
-    # For wayland we've already compile hide-cursor for arm arch64
-    # So we just need copy over into the specific places
-    # For now we assume all will use 64bit version as bookworm
-    # officially supported in pi 4+ so thats all I've compiled for
-    curl -sO "$REPO/$COMMIT/wayfire/hide-cursor.xml"
-    curl -sO "$REPO/$COMMIT/wayfire/libhide-cursor.so"
-
-    # Copy the xml and compiled plugin to the required paths
-    sudo cp hide-cursor.xml /usr/share/wayfire/metadata/
-    sudo cp libhide-cursor.so /usr/lib/aarch64-linux-gnu/wayfire/
+  if [[ $DESKTOP_SESSION = $WAYLAND_SESSION_NAME ]]; then
+    echo "Hide cursor for labwc not supported yet"
+    # This is not yet supported we need to either write something to use
+    # wayland client to hide the cursor or use libinput to move the cursor
   else
     # Unclutter is only applicable to non-wayland setups
     sudo apt install -y unclutter
@@ -71,14 +62,15 @@ check_raspberrypi() {
     log "this device doesn't appear to be a raspberry pi" 1
   fi
 
-  if [[ `echo $DESKTOP_SESSION | grep -Eq "LXDE-pi|LXDE-pi-wayfire"` ]]; then
+  if [[ `echo $DESKTOP_SESSION | grep -Eq "^(LXDE-pi|LXDE-pi-labwc)$"` ]]; then
     log "this device isn't running a supported desktop environment", 1
   fi
 }
 
-install_kiosk_script_for_wayland() {
+install_kiosk_script_for_labwc_compositor() {
   GECKOBOARD_KIOSK_FILE=$HOME/.local/geckoboard_kiosk_mode
-  WAYFIRE_INI=$HOME/.config/wayfire.ini
+  LABWC_CONFIG_PATH=$HOME/.config/labwc
+  LABWC_AUTOSTART=$LABWC_CONFIG_PATH/autostart
 
 cat > $GECKOBOARD_KIOSK_FILE <<EOF
 #!/bin/bash
@@ -101,43 +93,13 @@ https://app.geckoboard.com/tv
 
 EOF
 
-
-# This is the default set of plugings for both with and without gl
-# So default the shared plugins and add the extra that gl supports
-DEFAULT_PLUGINS="alpha animate autostart autostart-static command pixdecor expo fast-switcher grid idle move oswitch place resize switcher vswitch window-rules wm-actions wrot hide-cursor"
-
-# We need to add add in the hide-cursor plugin along with the existing plugins already
-# defined in /etc/wayfire/default.ini so that the user gets access to the desktop too 
-WAYFIRE_BLOCK=$(
-cat <<EOF
-
-[autostart]
-geckoboard_kiosk = $GECKOBOARD_KIOSK_FILE
-
-[core]
-plugins = $DEFAULT_PLUGINS cube fisheye invert zoom winshadows
-plugins_nogl = $DEFAULT_PLUGINS
-xwayland = true
-only_decorate_gtk = true
-
-[autostart-static]
-autostart0 = wfrespawn wf-panel-pi
-autostart1 = wfrespawn pcmanfm --desktop --profile LXDE-pi
-autostart2 = lxsession-xdg-autostart
-
-[idle]
-screensaver_timeout = -1
-dpms_timeout = -1
-
-EOF
-)
-
+  mkdir -p $LABWC_CONFIG_PATH
   chmod +x $GECKOBOARD_KIOSK_FILE
 
-  if grep -Fxq "$GECKOBOARD_KIOSK_FILE" $WAYFIRE_INI; then
+  if grep -Fxq "$GECKOBOARD_KIOSK_FILE" $LABWC_AUTOSTART; then
     echo "[SKIP] kiosk mode already setup"
   else
-    echo "$WAYFIRE_BLOCK" >> $WAYFIRE_INI
+    echo "$GECKOBOARD_KIOSK_FILE &" >> $LABWC_AUTOSTART
   fi
 }
 
@@ -269,7 +231,7 @@ log "getting latest packages"
 sudo apt update -y
 
 # Only ask about underscan for non-wayland instances
-if [[ $DESKTOP_SESSION != $WAYFIRE_SESSION_NAME ]]; then
+if [[ $DESKTOP_SESSION != $WAYLAND_SESSION_NAME ]]; then
   printf "do you see black border around the screen [y/N]:"
   read blkbrd
   if [[ $blkbrd == "y" ]]; then
@@ -299,15 +261,9 @@ log "setting up Geckoboard kiosk mode"
 
 # Wayfire compositor handles autostart so check the session
 # and use the wayland installation as we can't support any X11 stuff
-if [[ $DESKTOP_SESSION = $WAYFIRE_SESSION_NAME ]]; then
+if [[ $DESKTOP_SESSION = $WAYLAND_SESSION_NAME ]]; then
   force_hdmi_display
-  install_kiosk_script_for_wayland
-
-  # The wayfire service monitors config changes which causes
-  # the user to be logged out so they don't see the setup complete message
-  # So lets just trigger a reboot immediately otherwise the force hdmi will
-  # not have applied
-  reboot
+  install_kiosk_script_for_labwc_compositor
 else
   install_kiosk_script
 fi
