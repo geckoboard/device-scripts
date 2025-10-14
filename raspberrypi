@@ -1,7 +1,5 @@
 #!/bin/bash
 
-WAYLAND_SESSION_NAME="LXDE-pi-labwc"
-
 log() {
   if [[ $2 != "" ]]; then
     printf "\n[ERRO] $1\n"
@@ -42,17 +40,6 @@ install_color_emoji() {
   rm $NOTOEMOJI_ZIPFILE || true
 }
 
-install_hide_cursor() {
-  if [[ $DESKTOP_SESSION = $WAYLAND_SESSION_NAME ]]; then
-    echo "Hide cursor for labwc not supported yet"
-    # This is not yet supported we need to either write something to use
-    # wayland client to hide the cursor or use libinput to move the cursor
-  else
-    # Unclutter is only applicable to non-wayland setups
-    sudo apt install -y unclutter
-  fi
-}
-
 check_raspberrypi() {
   if ! `lsb_release -a | grep -Eq "Raspbian|Debian"`; then
     log "this device appears not to be running raspbian os" 1
@@ -62,12 +49,12 @@ check_raspberrypi() {
     log "this device doesn't appear to be a raspberry pi" 1
   fi
 
-  if [[ `echo $DESKTOP_SESSION | grep -Eq "^(LXDE-pi|LXDE-pi-labwc)$"` ]]; then
+  if ! [[ "$DESKTOP_SESSION" == "rpd-labwc" ]]; then
     log "this device isn't running a supported desktop environment", 1
   fi
 }
 
-install_kiosk_script_for_labwc_compositor() {
+install_kiosk_script() {
   GECKOBOARD_KIOSK_FILE=$HOME/.local/geckoboard_kiosk_mode
   LABWC_CONFIG_PATH=$HOME/.config/labwc
   LABWC_AUTOSTART=$LABWC_CONFIG_PATH/autostart
@@ -84,7 +71,7 @@ sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' $HOME/.config/chromium/De
 # Disable any installed extentions and the default browser check and error dialogs
 # We need to add the switch start-maximized otherwise on wayland it will 
 # start as a pixel size and not displayed using start-maximized fixes that
-chromium-browser \
+chromium \
 --disable-extensions \
 --start-maximized \
 --start-fullscreen \
@@ -102,95 +89,6 @@ EOF
     echo "$GECKOBOARD_KIOSK_FILE &" >> $LABWC_AUTOSTART
   fi
 }
-
-install_kiosk_script() {
-  AUTOSTART_PATH=$HOME/.config/lxsession/LXDE-pi
-  AUTOSTART_FILE=$AUTOSTART_PATH/autostart
-  GECKOBOARD_KIOSK_FILE=$AUTOSTART_PATH/geckoboard_kiosk_mode
-
-  mkdir -p $AUTOSTART_PATH
-
-cat > $GECKOBOARD_KIOSK_FILE <<EOF
-#!/bin/bash
-
-# Turn off screensaver stuff and disable energysaver stuff
-xset -dpms
-xset s noblank
-xset s off
-
-# Remove the mouse cursor after 10 seconds of idleness
-# This uses grab to remove focus from the browser in case of link hover
-unclutter -idle 10 -grab &
-
-# Ensure that if we have a power cut or bad shutdown that
-# the chromium preferences are reset to a "good" state so we
-# don't get the restore previous session dialog
-sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' $HOME/.config/chromium/Default/Preferences
-sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' $HOME/.config/chromium/Default/Preferences
-
-# Disable any installed extentions and the default browser check
-chromium-browser \
---disable-extensions \
---start-fullscreen \
---no-default-browser-check \
-https://app.geckoboard.com/tv
-EOF
-
-  chmod +x $GECKOBOARD_KIOSK_FILE
-
-  if [[ ! -f $AUTOSTART_FILE ]]; then
-    # We are clear to clone the current autostart
-    echo "[INFO] cloning system lxde autostart"
-    cp /etc/xdg/lxsession/LXDE-pi/autostart $AUTOSTART_FILE
-
-    log "adding kiosk mode to autostart"
-    echo "@$GECKOBOARD_KIOSK_FILE" >> $AUTOSTART_FILE
-  else
-    if grep -Fxq "@$GECKOBOARD_KIOSK_FILE" $AUTOSTART_FILE; then
-      echo "[SKIP] kiosk mode already setup"
-    else
-      log "adding kiosk mode to autostart"
-      echo "@$GECKOBOARD_KIOSK_FILE" >> $AUTOSTART_FILE
-    fi
-  fi
-}
-
-disable_underscan() {
-  # Create a backup file before modifying
-  sudo cp /boot/config.txt /boot/config.txt.bkp
-  sudo sed -i 's/#disable_overscan=1/disable_overscan=1/' /boot/config.txt
-}
-
-# Ensure for bookworm that when turning off the connected display instead of it
-# disconnecting and causing Chrome to come out of fullscreen due to re-assessing
-# the display, we now we enforce a permanent display when HDMI is "disconnected"
-# We need to check which HDMI port is connected and inject to the boot cmdlines
-#   1) Is HDMI port nearest to power
-#   2) next one
-#   3) we don't use here, but means both are connected
-# This means that if we setup on 1 and connect to port 2 we will get a seperate
-# display instead of the "main" one. Re-running this script will always update.
-force_hdmi_display() {
-  ACTIVE_HDMI_PORT=`wlr-randr | grep HDMI | grep -v null`
-  BOOT_CMD_FILE=/boot/firmware/cmdline.txt
-  sudo cp "$BOOT_CMD_FILE" "$BOOT_CMD_FILE".bkp
-
-  HDMI_PORT=1
-  HOTPLUG_CMD=vc4.force_hotplug
-
-  if [[ "$ACTIVE_HDMI_PORT" =~ "HDMI-A-2" ]]; then
-    HDMI_PORT=2
-  fi
-
-  if grep -q "$HOTPLUG_CMD" $BOOT_CMD_FILE; then
-    echo "Amending existing HDMI hot plug setting"
-    sed "s/$HOTPLUG_CMD=[1-3]/$HOTPLUG_CMD=$HDMI_PORT/" $BOOT_CMD_FILE | xargs echo -n | sudo tee $BOOT_CMD_FILE
-  else
-    echo "Setting up HDMI hotplug"
-    echo -n " $HOTPLUG_CMD=$HDMI_PORT" | sudo tee -a $BOOT_CMD_FILE
-  fi
-}
-
 
 # Display logo and intro to user
 # ASCII display generated at https://www.ascii-art-generator.org/
@@ -211,13 +109,11 @@ The questions which will be asked will be just require either y for Yes or n for
 by default the answer will assume No (y/N) declared by the capital N in these cases you can just press enter
 
 We will do the following;
- - Turn off any underscan if necessary
  - Upgrade your raspbian OS with the latest updates
  - Ensure Chromium is installed and the latest version available
  - Install color emoji support
  - Install Microsoft core fonts 
- - Install a script which will disable screensaver/power settings and
-   start chromium at Geckoboard on each startup
+ - Install a script which will start chromium at Geckoboard on each startup
 
  This process should only take a few minutes
  If you are ready press any key to start
@@ -230,16 +126,6 @@ check_raspberrypi
 log "getting latest packages"
 sudo apt update -y
 
-# Only ask about underscan for non-wayland instances
-if [[ $DESKTOP_SESSION != $WAYLAND_SESSION_NAME ]]; then
-  printf "do you see black border around the screen [y/N]:"
-  read blkbrd
-  if [[ $blkbrd == "y" ]]; then
-    log "disabling underscan"
-    disable_underscan
-  fi
-fi
-
 printf "do you want to install latest updates (it might take 10+ mins) [y/N]:"
 read upgr
 if [[ $upgr == "y" ]]; then
@@ -247,9 +133,8 @@ if [[ $upgr == "y" ]]; then
   upgrade_system
 fi
 
-log "installing latest chromium browser and tools"
-sudo apt install -y chromium-browser > /dev/null
-install_hide_cursor > /dev/null
+log "installing latest chromium browser"
+sudo apt install -y chromium > /dev/null
 
 log "installing mscore fonts"
 sudo apt install -y ttf-mscorefonts-installer > /dev/null
@@ -259,14 +144,7 @@ install_color_emoji > /dev/null
 
 log "setting up Geckoboard kiosk mode"
 
-# Wayfire compositor handles autostart so check the session
-# and use the wayland installation as we can't support any X11 stuff
-if [[ $DESKTOP_SESSION = $WAYLAND_SESSION_NAME ]]; then
-  force_hdmi_display
-  install_kiosk_script_for_labwc_compositor
-else
-  install_kiosk_script
-fi
+install_kiosk_script
 
 cat <<EOF
 
