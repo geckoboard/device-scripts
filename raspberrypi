@@ -54,6 +54,8 @@ check_raspberrypi() {
   fi
 }
 
+CHROME_PWDSTORE_SWITCH=""
+
 install_kiosk_script() {
   GECKOBOARD_KIOSK_FILE=$HOME/.local/geckoboard_kiosk_mode
   LABWC_CONFIG_PATH=$HOME/.config/labwc
@@ -69,12 +71,10 @@ sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' $HOME/.config/chromium/
 sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' $HOME/.config/chromium/Default/Preferences
 
 # Disable any installed extentions and the default browser check and error dialogs
-# We need to add the switch start-maximized otherwise on wayland it will 
-# start as a pixel size and not displayed using start-maximized fixes that
 chromium \
+$CHROME_PWDSTORE_SWITCH \
+--kiosk \
 --disable-extensions \
---start-maximized \
---start-fullscreen \
 --no-default-browser-check \
 https://app.geckoboard.com/tv
 
@@ -143,6 +143,20 @@ log "installing color emoji support"
 install_color_emoji > /dev/null
 
 log "setting up Geckoboard kiosk mode"
+
+printf "\nTo prevent default keyring requesting password input when opening Chrome\n"
+printf "We're going to instruct Chrome to store passwords unencrypted in its own store\n"
+printf "This would be the same as setting no password in your keyring\n"
+printf "If you intend to store the passwords in Chrome for websites\n"
+printf "It would be highly recommended not to use the unencrypted password store\n\n"
+
+printf "Do you want to use unencrypted password store for Chrome? [y/N]:"
+
+read disableKeyring
+
+if [[ "$disableKeyring" == "y" ]]; then
+  CHROME_PWDSTORE_SWITCH="--password-store=basic"
+fi
 
 install_kiosk_script
 
